@@ -4,7 +4,7 @@ A demographic cellular automaton. Conway's cells are timeless — a live cell is
 
 The result is a class of emergence you can't get from a binary rule. Instead of gliders and still-lifes, the moving objects are **demographic cohorts** — booms, die-offs, and traveling waves of age that sweep across the grid as a color gradient.
 
-[**▶ Live demo**](#) · single self-contained HTML file, no build step, no dependencies.
+[**▶ Live demo**](lifespan.html) · single self-contained HTML file, no build step, no dependencies.
 
 ![juvenile → mature → senescent → dying](https://img.shields.io/badge/cohorts-not%20gliders-c2410c)
 
