@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lifespan — a demographic cellular automaton</title>
+<style>
+  :root {
+    --ink: #1a1410;
+    --paper: #e8e0d0;
+    --paper-dim: #d4cab4;
+    --rule: #b0a488;
+    --accent: #c2410c;
+    --grid-bg: #14110d;
+    /* age cohort ramp: juvenile -> mature -> senescent */
+    --juv: #2dd4bf;
+    --mature: #fde047;
+    --senescent: #c2410c;
+    --dying: #7f1d1d;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    line-height: 1.5;
+    padding: clamp(1rem, 4vw, 3rem);
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.6rem;
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 8vw, 4.6rem);
+    font-weight: 400;
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.8rem;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+
+  .lede {
+    max-width: 60ch;
+    font-size: clamp(1rem, 2.4vw, 1.18rem);
+    color: #3a2f24;
+    margin-bottom: 2rem;
+  }
+
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  @media (min-width: 820px) {
+    .stage { grid-template-columns: 1fr 280px; align-items: start; }
+  }
+
+  .canvas-wrap {
+    background: var(--grid-bg);
+    border: 1px solid var(--ink);
+    padding: 10px;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+    cursor: crosshair;
+  }
+
+  .panel { display: flex; flex-direction: column; gap: 1.4rem; }
+
+  .reading {
+    border: 1px solid var(--rule);
+    background: var(--paper-dim);
+    padding: 1rem;
+  }
+  .reading h2 {
+    font-family: ui-monospace, monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-weight: 400;
+    color: #6b5d48;
+    margin-bottom: 0.7rem;
+  }
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-variant-numeric: tabular-nums;
+    padding: 0.15rem 0;
+  }
+  .stat-row .k {
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    color: #6b5d48;
+  }
+  .stat-row .v { font-size: 1.1rem; }
+
+  /* age histogram */
+  .histo { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin-top: 0.8rem; }
+  .histo .bar { flex: 1; background: var(--mature); min-height: 1px; transition: height 0.1s linear; }
+
+  .controls { display: flex; flex-direction: column; gap: 0.9rem; }
+
+  .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  button {
+    font-family: ui-monospace, monospace;
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.6rem 0.9rem;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    cursor: pointer;
+    flex: 1;
+    min-width: 70px;
+  }
+  button:hover { background: var(--accent); }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+  button.ghost:hover { background: var(--ink); color: var(--paper); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .slider-block label {
+    display: flex;
+    justify-content: space-between;
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    color: #6b5d48;
+    margin-bottom: 0.25rem;
+  }
+  .slider-block label span { color: var(--ink); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  .legend { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.4rem; }
+  .legend .item { display: flex; align-items: center; gap: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.68rem; color: #4a3e30; }
+  .legend .sw { width: 14px; height: 14px; border: 1px solid rgba(0,0,0,0.3); }
+
+  .notes {
+    margin-top: 2.5rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1.5rem;
+    max-width: 68ch;
+  }
+  .notes h2 { font-size: 1.4rem; font-weight: 400; margin-bottom: 0.6rem; }
+  .notes p { margin-bottom: 0.8rem; color: #3a2f24; }
+  .notes code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.85em;
+    background: var(--paper-dim);
+    padding: 0.05em 0.35em;
+  }
+  .seed-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.3rem; }
+  .seed-row button { flex: 1 1 auto; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .histo .bar { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <p class="eyebrow">Cellular Automaton № 1 · Demographic Class</p>
+  <h1>Life<em>span</em></h1>
+  <p class="lede">
+    Conway's cells are timeless — a live cell is identical to every other live cell, forever.
+    Here, every cell carries a private clock. It is born juvenile, must reach <strong>maturity</strong>
+    before it can help create new life, and eventually dies of <strong>old age</strong>. Crowding
+    doesn't kill; time does. Watch generations move across the grid as colored cohorts — booms,
+    die-offs, and traveling waves of age that no binary rule can produce.
+  </p>
+
+  <div class="stage">
+    <div class="canvas-wrap">
+      <canvas id="c" width="120" height="120"></canvas>
+    </div>
+
+    <div class="panel">
+      <div class="controls">
+        <div class="btn-row">
+          <button id="play">▶ Run</button>
+          <button id="step" class="ghost">Step</button>
+        </div>
+        <div class="btn-row">
+          <button id="clear" class="ghost">Clear</button>
+          <button id="random" class="ghost">Scatter</button>
+        </div>
+
+        <div class="slider-block">
+          <label>Maturity age (M) <span id="mLabel">3</span></label>
+          <input type="range" id="m" min="1" max="12" value="3">
+        </div>
+        <div class="slider-block">
+          <label>Lifespan (L) <span id="lLabel">14</span></label>
+          <input type="range" id="l" min="2" max="60" value="14">
+        </div>
+        <div class="slider-block">
+          <label>Birth needs (mature nbrs) <span id="bLabel">2–3</span></label>
+          <input type="range" id="b" min="1" max="8" value="3">
+        </div>
+        <div class="slider-block">
+          <label>Speed <span id="sLabel">12/s</span></label>
+          <input type="range" id="s" min="1" max="30" value="12">
+        </div>
+      </div>
+
+      <div class="reading">
+        <h2>Population reading</h2>
+        <div class="stat-row"><span class="k">generation</span><span class="v" id="gen">0</span></div>
+        <div class="stat-row"><span class="k">alive</span><span class="v" id="pop">0</span></div>
+        <div class="stat-row"><span class="k">mature</span><span class="v" id="mat">0</span></div>
+        <div class="stat-row"><span class="k">mean age</span><span class="v" id="avg">0.0</span></div>
+        <div class="histo" id="histo" title="age distribution"></div>
+      </div>
+
+      <div class="reading">
+        <h2>Seeds</h2>
+        <div class="seed-row">
+          <button id="seedPulse" class="ghost">Pulsar</button>
+          <button id="seedBlock" class="ghost">Nursery</button>
+          <button id="seedLine" class="ghost">Cohort</button>
+        </div>
+        <div class="legend">
+          <div class="item"><span class="sw" style="background:var(--juv)"></span> juvenile (can't reproduce)</div>
+          <div class="item"><span class="sw" style="background:var(--mature)"></span> mature (fertile)</div>
+          <div class="item"><span class="sw" style="background:var(--senescent)"></span> aging</div>
+          <div class="item"><span class="sw" style="background:var(--dying)"></span> near death</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Why this shows emergence differently</h2>
+    <p>
+      Standard "Life-like" automata encode their whole rule in two numbers (Conway is
+      <code>B3/S23</code>): a dead cell's fate and a live cell's fate, both decided purely by a
+      neighbor count. Every cell is in one of two states, so the only thing that can travel across the
+      grid is a <em>spatial</em> pattern — a glider, a spaceship.
+    </p>
+    <p>
+      Lifespan adds an orthogonal axis: an integer age per cell, with two thresholds. A cell only
+      counts as a parent once <code>age ≥ M</code>, and it dies when <code>age &gt; L</code>
+      regardless of its neighbors. Because young colonies are infertile, the system <em>self-paces</em>:
+      a dense cluster can't explode until it grows up, then reproduces in synchrony, then dies in
+      synchrony — producing demographic waves and age-gradients (visible as the color ramp) rather than
+      still-lifes. The emergent objects here are <em>cohorts</em>, not shapes. Tune <code>M</code> and
+      <code>L</code> apart and you get rolling generational pulses; bring them together and the world
+      flickers between boom and extinction.
+    </p>
+  </div>
+
+<script>
+(function () {
+  const SIZE = 120;
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(SIZE, SIZE);
+
+  // age grid: 0 = dead, >=1 = alive with that age
+  let grid = new Uint16Array(SIZE * SIZE);
+  let next = new Uint16Array(SIZE * SIZE);
+  let generation = 0;
+
+  // params
+  let M = 3, L = 14, Bcenter = 3;
+  let running = false, fps = 12, lastTime = 0, acc = 0;
+
+  const idx = (x, y) => y * SIZE + x;
+
+  // --- color ramp by age ----------------------------------------------------
+  // juvenile (teal) -> mature (yellow) -> senescent (orange) -> dying (deep red)
+  function colorFor(age) {
+    if (age === 0) return [20, 17, 13];
+    const matFrac = Math.min(age / M, 1);            // 0..1 across juvenile span
+    const oldFrac = M >= L ? 1 : (age - M) / (L - M); // 0..1 across adult span
+    let r, g, b;
+    if (age < M) {
+      // teal -> yellow
+      r = lerp(45, 253, matFrac);
+      g = lerp(212, 224, matFrac);
+      b = lerp(191, 71, matFrac);
+    } else {
+      const f = Math.max(0, Math.min(1, oldFrac));
+      if (f < 0.6) {
+        const t = f / 0.6;            // yellow -> orange
+        r = lerp(253, 194, t); g = lerp(224, 65, t); b = lerp(71, 12, t);
+      } else {
+        const t = (f - 0.6) / 0.4;    // orange -> deep red
+        r = lerp(194, 127, t); g = lerp(65, 29, t); b = lerp(12, 29, t);
+      }
+    }
+    return [r | 0, g | 0, b | 0];
+  }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // --- step rule ------------------------------------------------------------
+  function step() {
+    const bMin = Math.max(1, Bcenter - 1);
+    const bMax = Bcenter + 1;
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        // count mature neighbors (toroidal wrap)
+        let mature = 0, alive = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = (x + dx + SIZE) % SIZE;
+            const ny = (y + dy + SIZE) % SIZE;
+            const a = grid[idx(nx, ny)];
+            if (a > 0) {
+              alive++;
+              if (a >= M) mature++;
+            }
+          }
+        }
+        const self = grid[idx(x, y)];
+        let result = 0;
+        if (self > 0) {
+          // survival: dies of old age, or of total isolation (loneliness),
+          // otherwise ages by one.
+          if (self > L) result = 0;            // senescence
+          else if (alive === 0) result = 0;    // no support at all
+          else result = self + 1;              // grow older
+        } else {
+          // birth: empty cell with the right number of MATURE neighbors
+          if (mature >= bMin && mature <= bMax) result = 1;
+        }
+        next[idx(x, y)] = result;
+      }
+    }
+    const tmp = grid; grid = next; next = tmp;
+    generation++;
+  }
+
+  // --- render + readings ----------------------------------------------------
+  const histoBars = [];
+  (function buildHisto() {
+    const h = document.getElementById('histo');
+    for (let i = 0; i < 16; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      h.appendChild(bar);
+      histoBars.push(bar);
+    }
+  })();
+
+  function render() {
+    const d = img.data;
+    let pop = 0, mat = 0, sumAge = 0, maxAgeSeen = 1;
+    const buckets = new Array(16).fill(0);
+    for (let i = 0; i < grid.length; i++) {
+      const a = grid[i];
+      const [r, g, b] = colorFor(a);
+      const p = i * 4;
+      d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255;
+      if (a > 0) {
+        pop++; sumAge += a;
+        if (a >= M) mat++;
+        if (a > maxAgeSeen) maxAgeSeen = a;
+        const bk = Math.min(15, Math.floor((a - 1) / Math.max(1, L) * 16));
+        buckets[bk]++;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+
+    document.getElementById('gen').textContent = generation;
+    document.getElementById('pop').textContent = pop;
+    document.getElementById('mat').textContent = mat;
+    document.getElementById('avg').textContent = pop ? (sumAge / pop).toFixed(1) : '0.0';
+
+    const peak = Math.max(1, ...buckets);
+    for (let i = 0; i < 16; i++) {
+      histoBars[i].style.height = (buckets[i] / peak * 100) + '%';
+      // tint each bar by the age it represents
+      const repAge = (i / 16) * L + 1;
+      const [r, g, b] = colorFor(repAge);
+      histoBars[i].style.background = `rgb(${r},${g},${b})`;
+    }
+  }
+
+  // --- loop -----------------------------------------------------------------
+  function loop(t) {
+    if (running) {
+      if (!lastTime) lastTime = t;
+      acc += (t - lastTime) / 1000;
+      lastTime = t;
+      const interval = 1 / fps;
+      let did = false;
+      while (acc >= interval) { step(); acc -= interval; did = true; }
+      if (did) render();
+    } else {
+      lastTime = 0;
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // --- seeds ----------------------------------------------------------------
+  function clear() { grid.fill(0); generation = 0; render(); }
+
+  function scatter() {
+    clear();
+    for (let i = 0; i < grid.length; i++) {
+      if (Math.random() < 0.18) grid[i] = 1 + Math.floor(Math.random() * M);
+    }
+    render();
+  }
+
+  function seedNursery() {
+    clear();
+    const cx = SIZE >> 1, cy = SIZE >> 1;
+    for (let y = -6; y <= 6; y++)
+      for (let x = -6; x <= 6; x++)
+        grid[idx((cx + x + SIZE) % SIZE, (cy + y + SIZE) % SIZE)] = M; // born mature & synchronized
+    render();
+  }
+
+  function seedCohort() {
+    clear();
+    const cy = SIZE >> 1;
+    for (let x = 10; x < SIZE - 10; x++) {
+      grid[idx(x, cy)] = M;
+      grid[idx(x, cy - 1)] = Math.max(1, M - 1);
+      grid[idx(x, cy + 1)] = Math.max(1, M - 1);
+    }
+    render();
+  }
+
+  function seedPulsar() {
+    clear();
+    // scattered mature seeds tuned to oscillate into demographic pulses
+    const cx = SIZE >> 1, cy = SIZE >> 1;
+    const pts = [[-4,0],[-3,0],[-2,0],[2,0],[3,0],[4,0],[0,-4],[0,-3],[0,-2],[0,2],[0,3],[0,4]];
+    pts.forEach(([x, y]) => { grid[idx((cx+x+SIZE)%SIZE, (cy+y+SIZE)%SIZE)] = M; });
+    render();
+  }
+
+  // --- painting -------------------------------------------------------------
+  let painting = false;
+  function paintAt(ev) {
+    const rect = canvas.getBoundingClientRect();
+    const px = ev.touches ? ev.touches[0].clientX : ev.clientX;
+    const py = ev.touches ? ev.touches[0].clientY : ev.clientY;
+    const x = Math.floor((px - rect.left) / rect.width * SIZE);
+    const y = Math.floor((py - rect.top) / rect.height * SIZE);
+    if (x >= 0 && x < SIZE && y >= 0 && y < SIZE) {
+      grid[idx(x, y)] = M; // paint mature so it reproduces immediately
+      render();
+    }
+  }
+  canvas.addEventListener('mousedown', e => { painting = true; paintAt(e); });
+  canvas.addEventListener('mousemove', e => { if (painting) paintAt(e); });
+  window.addEventListener('mouseup', () => painting = false);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); painting = true; paintAt(e); }, {passive:false});
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); if (painting) paintAt(e); }, {passive:false});
+  window.addEventListener('touchend', () => painting = false);
+
+  // --- wiring ---------------------------------------------------------------
+  const playBtn = document.getElementById('play');
+  playBtn.onclick = () => {
+    running = !running;
+    playBtn.textContent = running ? '❚❚ Pause' : '▶ Run';
+  };
+  document.getElementById('step').onclick = () => { step(); render(); };
+  document.getElementById('clear').onclick = clear;
+  document.getElementById('random').onclick = scatter;
+  document.getElementById('seedBlock').onclick = seedNursery;
+  document.getElementById('seedLine').onclick = seedCohort;
+  document.getElementById('seedPulse').onclick = seedPulsar;
+
+  const mEl = document.getElementById('m'), lEl = document.getElementById('l'),
+        bEl = document.getElementById('b'), sEl = document.getElementById('s');
+  mEl.oninput = () => {
+    M = +mEl.value;
+    if (M > L) { L = M; lEl.value = L; document.getElementById('lLabel').textContent = L; }
+    document.getElementById('mLabel').textContent = M; render();
+  };
+  lEl.oninput = () => {
+    L = +lEl.value;
+    if (L < M) { M = L; mEl.value = M; document.getElementById('mLabel').textContent = M; }
+    document.getElementById('lLabel').textContent = L;
+  };
+  bEl.oninput = () => {
+    Bcenter = +bEl.value;
+    const lo = Math.max(1, Bcenter - 1);
+    document.getElementById('bLabel').textContent = lo + '–' + (Bcenter + 1);
+  };
+  sEl.oninput = () => { fps = +sEl.value; document.getElementById('sLabel').textContent = fps + '/s'; };
+
+  // boot
+  seedPulsar();
+  running = true;
+  playBtn.textContent = '❚❚ Pause';
+})();
+</script>
+</body>
+</html>
